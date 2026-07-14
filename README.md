@@ -5,7 +5,7 @@
 > Gemini, stores vectors in Chroma DB, and answers questions via grounded
 > generation with figure re-attachment for vision-rich answers.
 
-**Built by Maha Fatima** | [arXiv:1706.03762](https://arxiv.org/abs/1706.03762) | Google Gemini API | ChromaDB | Streamlit
+**Built by Maha Fatima** | [LinkedIn Post](https://www.linkedin.com/posts/activity-7482876699869773824-71mx) | [arXiv:1706.03762](https://arxiv.org/abs/1706.03762) | Google Gemini API | ChromaDB | Streamlit
 
 ---
 
