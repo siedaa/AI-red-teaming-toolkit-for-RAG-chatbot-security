@@ -12,6 +12,7 @@
 ## Table of Contents
 
 - [Overview](#overview)
+- [Applied Mathematics in This Project](#applied-mathematics-in-this-project)
 - [Pipeline Architecture](#pipeline-architecture)
 - [Setup](#setup)
 - [Script-by-Script Guide](#script-by-script-guide)
@@ -38,6 +39,122 @@ processes **three distinct modalities** from a single PDF:
 All three are unified into a single vector store, so a single query can retrieve
 evidence across any combination of modalities. The LLM then generates an answer
 grounded **only** in the retrieved context.
+
+---
+
+## Applied Mathematics in This Project
+
+This system is built on several core applied-mathematical concepts that enable
+it to unify heterogeneous content (text, tables, figures) into a single
+retrievable, rankable structure.
+
+### 1. High-Dimensional Embedding Space
+
+Every element (text chunk, table, figure caption) is mapped into a **3072-dimensional**
+real-valued vector space via Gemini Embedding 001. This is a learned non-linear
+projection:
+
+$$
+\phi : \mathbb{R}^{|V|^{L}} \rightarrow \mathbb{R}^{3072}
+$$
+
+where $|V|$ is the vocabulary size and $L$ is the sequence length. The
+embedding model was trained so that **semantically similar content clusters
+together** in this high-dimensional space, regardless of modality. A table
+about BLEU scores and a paragraph describing the same results end up as nearby
+vectors, enabling cross-modality retrieval from a single query.
+
+### 2. Cosine Similarity Ranking
+
+Retrieval is framed as a **nearest-neighbor search** problem. Given a query
+vector $\mathbf{q} \in \mathbb{R}^{3072}$ and a corpus of $N$ document vectors
+$\{\mathbf{d}_1, \mathbf{d}_2, \ldots, \mathbf{d}_N\}$, the system ranks all
+documents by **cosine similarity**:
+
+$$
+\text{sim}(\mathbf{q}, \mathbf{d}_i) = \frac{\mathbf{q} \cdot \mathbf{d}_i}
+{\|\mathbf{q}\| \; \|\mathbf{d}_i\|}
+$$
+
+This measures the **angle** between vectors rather than Euclidean distance,
+making it invariant to vector magnitude. Cosine similarity lies in $[-1, 1]$
+where $1$ means identical direction (perfect match) and $0$ means orthogonal
+(no relation). Chroma stores cosine **distance** ($1 - \text{sim}$), which is
+converted back to similarity for intuitive display.
+
+### 3. HNSW Approximate Nearest Neighbor Index
+
+Exact brute-force cosine search over $N$ vectors scales as $O(N \cdot d)$ per
+query, where $d = 3072$. For the 35-element corpus here this is negligible, but
+production systems use Chroma's **HNSW** (Hierarchical Navigable Small World)
+index for sub-linear search. HNSW builds a multi-layer graph:
+
+- **Layer 0** contains all $N$ nodes with full connections.
+- **Higher layers** contain a random subset with long-range skip links.
+
+At query time, the search starts at the top layer and greedily navigates to the
+nearest neighbor, dropping to lower layers to refine. Expected query complexity
+is $O(\log N)$ rather than $O(N)$, making it feasible to scale to millions of
+vectors while preserving near-exact recall.
+
+### 4. Word-Level Geometric Heuristics for Borderless Table Extraction
+
+The paper's tables have no visible ruled lines, so standard table detection
+fails. Instead, the system applies **geometric clustering** on pdfplumber's
+word-level bounding boxes:
+
+1. **Y-position binning**: Each word's vertical position $y_i$ is quantized
+   into bins of width $\Delta y = 4$ pt:
+
+   $$
+   y_{\text{bin}}(w) = \left\lfloor \frac{y_i}{4} \right\rfloor \cdot 4
+   $$
+
+   Words in the same bin are assumed to share a baseline (same row).
+
+2. **X-position sorting**: Within each row, words are sorted left-to-right by
+   their $x_0$ coordinate, then joined with spaces to reconstruct clean text
+   lines.
+
+3. **Proximity-based word merging**: The extraction tolerance parameter
+   $x_{\text{tol}} = 1$ pt (reduced from the default 3) controls the maximum
+   gap between characters before they are split into separate tokens. This
+   prevents justified-text word merging.
+
+4. **Table-boundary detection**: A set of regex-based heuristics (section
+   heading patterns, sentence-boundary detection, known keyword lists) marks
+   where table data ends and body prose resumes.
+
+### 5. Dual-Content Indexing Scheme
+
+Each element is stored with **two distinct text fields**, serving different
+mathematical roles:
+
+| Field | Purpose | What it contains |
+|-------|---------|-----------------|
+| `embedding_text` | Semantic search (vectorised) | Caption + full content/description |
+| `display_content` | Human-readable output | Clean content only |
+
+This decouples the **search space** from the **presentation space**. For
+figures, `embedding_text` includes both the caption and the Gemini vision
+description (maximising recall), while `display_content` shows only the
+description (maximising readability). The key insight is that the embedding
+vector is a lossy compression of `embedding_text` — richer input text yields
+more discriminative vectors.
+
+### 6. Exponential Backoff for API Rate Limits
+
+The retry logic uses **exponential backoff** with a cap:
+
+$$
+t_{\text{wait}}(k) = \min\!\big(30 \cdot 2^{k-1},\; 60,\; T_{\text{remaining}}\big)
+$$
+
+where $k$ is the attempt number and $T_{\text{remaining}} = 180\text{s} - t_{\text{elapsed}}$.
+This models the **geometric distribution** of server recovery times — doubling
+the wait on each failure ensures the client backs off long enough for the
+rate-limit window to reset, while the 60s cap and 180s hard timeout prevent
+unbounded delays.
 
 ---
 
