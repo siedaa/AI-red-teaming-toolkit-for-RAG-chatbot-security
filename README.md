@@ -9,6 +9,21 @@
 
 ---
 
+## AI Red Teaming Toolkit (New)
+
+This repo now includes an automated red-teaming toolkit that tests this RAG chatbot
+against common AI security vulnerabilities: prompt injection, jailbreaks, role confusion,
+system prompt leakage, and data extraction. The toolkit lives in
+[`red_team_toolkit/`](red_team_toolkit/) and runs the chatbot's `answer_query()` function
+directly (bypassing Streamlit) against 35 curated attack prompts, then judges each
+response with a Groq-hosted LLM evaluator. **Baseline testing found 11/35 vulnerable
+responses**, concentrated in system prompt leakage (6/7 vulnerable) — guardrail
+improvements and a re-test are in progress. See
+[red_team_toolkit/README.md](red_team_toolkit/README.md) for full details, setup
+instructions, and current findings.
+
+---
+
 ## Table of Contents
 
 - [Overview](#overview)
@@ -21,6 +36,7 @@
 - [Technical Highlights](#technical-highlights)
 - [Edge Cases & Error Handling](#edge-cases--error-handling)
 - [Known Limitations](#known-limitations)
+- [AI Red Teaming Toolkit](#ai-red-teaming-toolkit-new)
 
 ---
 
