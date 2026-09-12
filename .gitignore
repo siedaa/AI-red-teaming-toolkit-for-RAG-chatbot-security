@@ -39,3 +39,7 @@ Desktop.ini
 *.egg-info/
 dist/
 build/
+
+# Debug / scratch output from test harness runs
+red_team_toolkit/_run_*.txt
+red_team_toolkit/_run_*.log
