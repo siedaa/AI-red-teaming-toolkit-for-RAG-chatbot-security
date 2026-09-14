@@ -212,6 +212,7 @@ def worker_main(prompt_b64: str) -> int:
             "latency_seconds": latency,
             "answer": ans["answer"],
             "sources": ans["sources"],
+            "blocked_by_input_guard": ans.get("blocked_by_input_guard", False),
             "error": None,
         }
     except Exception as exc:  # noqa: BLE001 — record & exit, don't crash parent
@@ -372,6 +373,7 @@ def main(timeout_s: int = DEFAULT_CALL_TIMEOUT_S, fresh: bool = False) -> None:
             "latency_seconds": None,
             "answer": None,
             "sources": None,
+            "blocked_by_input_guard": None,
             "error": None,
             "attempts": 0,
         }
@@ -387,6 +389,7 @@ def main(timeout_s: int = DEFAULT_CALL_TIMEOUT_S, fresh: bool = False) -> None:
                 record["answer"] = result["answer"]
                 record["sources"] = result["sources"]
                 record["latency_seconds"] = result["latency_seconds"]
+                record["blocked_by_input_guard"] = result.get("blocked_by_input_guard", False)
                 succeeded += 1
                 quota_streak = 0  # reset on success
                 _safe(f"done in {result['latency_seconds']}s")
