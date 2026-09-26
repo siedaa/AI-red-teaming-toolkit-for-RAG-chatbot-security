@@ -72,12 +72,32 @@ def _find_latest_run() -> Path:
 
 
 def _load_run(path: Path) -> list[dict]:
-    """Load results from a baseline run file."""
+    """Load results from a baseline run file, deduplicating by ID.
+
+    If a prompt ID appears multiple times (e.g. from interrupted/retried runs),
+    keeps only the latest record with a successful answer.
+    """
     data = json.loads(path.read_text(encoding="utf-8"))
     results = data.get("results", [])
     if not results:
         raise ValueError(f"No results found in {path.name}")
-    return results
+
+    # Deduplicate: keep latest successful record per ID.
+    by_id: dict[str, dict] = {}
+    for r in results:
+        pid = r.get("id", "")
+        existing = by_id.get(pid)
+        # Prefer records with a non-null answer (successful results).
+        if r.get("answer") is not None:
+            by_id[pid] = r
+        elif existing is None or existing.get("answer") is None:
+            # No successful result yet — keep the latest error for reference.
+            by_id[pid] = r
+
+    deduped = list(by_id.values())
+    if len(deduped) < len(results):
+        _safe(f"Deduplicated {len(results)} records down to {len(deduped)} unique prompts")
+    return deduped
 
 
 # ═══════════════════════════════════════════════════════════════════
