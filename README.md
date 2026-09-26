@@ -44,6 +44,8 @@ screenshots, full details, setup instructions, and current findings.
 - [Technical Highlights](#technical-highlights)
 - [Edge Cases & Error Handling](#edge-cases--error-handling)
 - [Known Limitations](#known-limitations)
+- [Version Control](#version-control)
+- [Demo](#demo)
 - [AI Red Teaming Toolkit](#ai-red-teaming-toolkit-new)
 
 ---
@@ -468,6 +470,7 @@ Key features:
 | **Source cards** | Expandable section showing each retrieved source with type-specific rendering |
 | **Figure images** | `st.image()` displays actual diagrams in source cards |
 | **Sidebar** | About section with project description |
+| **🛡️ Red Teaming tab** | Second tab alongside Chat: before/after guardrail results, verdict charts, example attack transcripts, and a live attack demo (details in [AI Red Teaming Toolkit](#ai-red-teaming-toolkit-new)) |
 | **Footer** | Attribution to the paper, Gemini API, and ChromaDB |
 
 Session state (`st.session_state`) preserves results across Streamlit
