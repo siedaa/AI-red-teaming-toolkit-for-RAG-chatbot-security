@@ -16,11 +16,19 @@ against common AI security vulnerabilities: prompt injection, jailbreaks, role c
 system prompt leakage, and data extraction. The toolkit lives in
 [`red_team_toolkit/`](red_team_toolkit/) and runs the chatbot's `answer_query()` function
 directly (bypassing Streamlit) against 35 curated attack prompts, then judges each
-response with a Groq-hosted LLM evaluator. **Baseline testing found 11/35 vulnerable
-responses**, concentrated in system prompt leakage (6/7 vulnerable) — guardrail
-improvements and a re-test are in progress. See
-[red_team_toolkit/README.md](red_team_toolkit/README.md) for full details, setup
-instructions, and current findings.
+response with a Groq-hosted LLM evaluator. Baseline testing (before guardrails) scored
+**20 SAFE / 4 PARTIALLY_VULNERABLE / 11 VULNERABLE — 43% of prompts exploited (15/35)**,
+concentrated in system prompt leakage (6/7 vulnerable). Guardrails were then added
+(input-side regex filter + a hardened system prompt) and the full suite was re-run:
+**35 SAFE / 0 / 0 — 0% vulnerable**, as verified in the
+[before/after comparison report](red_team_toolkit/reports/before_after_comparison_report.md).
+
+![Red Teaming Tab Overview](red_team_toolkit/screenshots/red_teaming_tab_overview.png)
+
+*The Red Teaming tab in `app.py`: 43% of attack prompts exploited before guardrails vs 0%
+after — verdict counts 20/4/11 before vs 35/0/0 after, plus per-category charts and a live
+attack demo.* See [red_team_toolkit/README.md](red_team_toolkit/README.md) for more
+screenshots, full details, setup instructions, and current findings.
 
 ---
 

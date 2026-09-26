@@ -59,14 +59,69 @@ with st.sidebar:
 #  Helper: load evaluation data (cached)
 # ═══════════════════════════════════════════════════════════════════
 
+EVAL_RESULTS_DIR = Path("red_team_toolkit/results")
+_KNOWN_VERDICTS = {"SAFE", "PARTIALLY_VULNERABLE", "VULNERABLE"}
+_TOTAL_ATTACK_PROMPTS = 35
+
+
+def _sorted_eval_files(pattern: str) -> list[Path]:
+    """Evaluation files matching *pattern*, newest first.
+
+    Ordered by the timestamp embedded in the filename
+    (evaluation_<label>_<YYYYMMDD_HHMMSS>.json), NOT by file mtime — mtimes
+    get rewritten on copy/checkout and previously caused the loader to pick
+    the wrong file.
+    """
+    return sorted(EVAL_RESULTS_DIR.glob(pattern), key=lambda f: f.name, reverse=True)
+
+
+def _is_full_evaluation(eval_data: dict) -> bool:
+    """True only for a complete evaluation: all 35 cases judged with one of
+    the three known verdicts (excludes partial re-runs and judge-error files)."""
+    results = eval_data.get("results", [])
+    return len(results) == _TOTAL_ATTACK_PROMPTS and all(
+        r.get("verdict") in _KNOWN_VERDICTS for r in results
+    )
+
+
 @st.cache_data
-def _load_evaluation(pattern: str) -> dict | None:
-    """Load the most recent evaluation file matching a glob pattern."""
-    results_dir = Path("red_team_toolkit/results")
-    files = sorted(results_dir.glob(pattern), key=lambda f: f.stat().st_mtime)
-    if not files:
-        return None
-    return json.loads(files[-1].read_text(encoding="utf-8"))
+def _load_after_evaluation() -> dict | None:
+    """Guardrail AFTER numbers — loaded ONLY from evaluation_patched_*.json."""
+    for f in _sorted_eval_files("evaluation_patched_*.json"):
+        try:
+            data = json.loads(f.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            continue
+        if _is_full_evaluation(data):
+            return data
+    return None
+
+
+@st.cache_data
+def _load_before_evaluation() -> dict | None:
+    """Guardrail BEFORE numbers — loaded ONLY from evaluation_baseline_*.json.
+
+    Two safety checks beyond the filename pattern:
+      1. Skip any file byte-identical to a patched evaluation — a misnamed
+         duplicate of the patched results previously made "before" silently
+         show the same numbers as "after".
+      2. Require a complete, fully-judged evaluation (see _is_full_evaluation)
+         so partial re-evaluations and judge-error files are never chosen.
+    """
+    patched_blobs = {
+        f.read_bytes() for f in EVAL_RESULTS_DIR.glob("evaluation_patched_*.json")
+    }
+    for f in _sorted_eval_files("evaluation_baseline_*.json"):
+        blob = f.read_bytes()
+        if blob in patched_blobs:
+            continue
+        try:
+            data = json.loads(blob)
+        except json.JSONDecodeError:
+            continue
+        if _is_full_evaluation(data):
+            return data
+    return None
 
 
 def _verdict_counts(eval_data: dict) -> dict[str, int]:
@@ -234,8 +289,8 @@ with tab_redteam:
     st.markdown("---")
 
     # ── Load evaluation data ─────────────────────────────────────────
-    before_eval = _load_evaluation("evaluation_baseline_*.json")
-    after_eval  = _load_evaluation("evaluation_patched_*.json")
+    before_eval = _load_before_evaluation()
+    after_eval  = _load_after_evaluation()
 
     if before_eval is None or after_eval is None:
         st.warning("Evaluation files not found. Run the evaluator first.")
@@ -452,5 +507,5 @@ st.markdown("---")
 st.markdown(
     "*Learning project  multimodal RAG over the "
     "[Attention Is All You Need](https://arxiv.org/abs/1706.03762) paper "
-    "using the Gemini API and ChromaDB.*"
+    "using the LLM API and ChromaDB.*"
 )
