@@ -22,7 +22,7 @@ WHY A STRESS SET AT ALL?
     fully independent of the training data's author style — the same voice
     wrote both. Its value is the BREADTH of input types it covers, not
     authorship independence. A perfect score here is weaker evidence than the
-    fresh set (which the user authored); treat it accordingly. The line is
+    fresh set (which the assistant also drafted); treat it accordingly. The line is
     printed at the top of this script's output and stored in stress_set.json.
 
 *** THE STRESS SET IS A FINAL, UNTOUCHED EXAM ***
@@ -88,7 +88,7 @@ def main() -> None:
     _safe("=" * 70)
     _safe("AUTHORSHIP: assistant-drafted, NOT user-authored. This set is NOT fully")
     _safe("independent of the training data's author style; its value is breadth of")
-    _safe("input types, not independence. Weaker evidence than the user's fresh set.")
+    _safe("input types, not independence. Weaker evidence than the assistant-drafted fresh set.")
     _safe("No model weight, threshold, or setting is changed by this script.")
     _safe("")
 

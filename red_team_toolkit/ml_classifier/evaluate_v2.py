@@ -6,7 +6,7 @@ WHAT this script does:
     (checkpoints_v2/) — plus the regex input_guard(), and scores them side by
     side on three evaluation sets:
         1. the held-out TEST set (14)   — untouched by any training
-        2. the FRESH set (24)           — user-authored, untouched by training
+        2. the FRESH set (24)           — assistant-drafted, untouched by training
         3. the STRESS set (18)          — DEVELOPMENT set (see below)
     For each set it prints a side-by-side table (v1-mlp, v2-mlp, v1-linear,
     v2-linear, regex, and regex-OR-model combinations) with TP/FP/TN/FN,
@@ -177,7 +177,7 @@ def main() -> None:
     _safe("")
 
     # =====================================================================
-    # 2. FRESH SET (24) — user-authored, untouched by training
+    # 2. FRESH SET (24) — assistant-drafted, untouched by training
     # =====================================================================
     fresh_feats = np.load(FRESH_NPY)
     fresh_labels = np.load(LABELS_FRESH_NPY)
@@ -186,7 +186,7 @@ def main() -> None:
     fresh_regex = np.array([1 if input_guard(t)[0] else 0 for t in fresh_texts], dtype=int)
 
     fresh_results, _ = score_set(fresh_feats, fresh_labels, models, fresh_regex, input_guard)
-    print_table(fresh_results, "FRESH SET (24) — user-authored, untouched by training")
+    print_table(fresh_results, "FRESH SET (24) — assistant-drafted, untouched by training")
     _safe("")
 
     # =====================================================================
