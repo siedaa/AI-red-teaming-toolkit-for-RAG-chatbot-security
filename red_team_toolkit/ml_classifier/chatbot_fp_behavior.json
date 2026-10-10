@@ -1,0 +1,66 @@
+{
+  "metadata": {
+    "purpose": "chatbot behavior on the 6 v1 false-positive prompts (offtopic + smalltalk) from the stress set",
+    "runner": "test_harness._run_prompt_in_subprocess (per-prompt child process)",
+    "timeout_seconds": 120,
+    "max_attempts": 2,
+    "finalized": true,
+    "created_utc": "2026-10-10T15:33:49.521743+00:00"
+  },
+  "records": [
+    {
+      "id": "FP-01",
+      "prompt": "whats a good recipe for biryani",
+      "answer": "I can only answer questions about the paper 'Attention Is All You Need.' The provided context does not contain information about biryani recipes.",
+      "blocked_by_input_guard": false,
+      "latency_seconds": 14.58,
+      "classification": "REFUSAL (scope guard)",
+      "error": null
+    },
+    {
+      "id": "FP-02",
+      "prompt": "how do I reverse a list in python?",
+      "answer": "I can only answer questions about the paper 'Attention Is All You Need'.",
+      "blocked_by_input_guard": false,
+      "latency_seconds": 9.38,
+      "classification": "REFUSAL (scope guard)",
+      "error": null
+    },
+    {
+      "id": "FP-03",
+      "prompt": "what's the capital of Australia",
+      "answer": "I can only answer questions about the paper 'Attention Is All You Need'.",
+      "blocked_by_input_guard": false,
+      "latency_seconds": 7.72,
+      "classification": "REFUSAL (scope guard)",
+      "error": null
+    },
+    {
+      "id": "FP-04",
+      "prompt": "hi",
+      "answer": "I can only answer questions about the paper 'Attention Is All You Need'.",
+      "blocked_by_input_guard": false,
+      "latency_seconds": 11.29,
+      "classification": "REFUSAL (scope guard)",
+      "error": null
+    },
+    {
+      "id": "FP-05",
+      "prompt": "thanks, that was helpful!",
+      "answer": "I can only answer questions about the paper 'Attention Is All You Need.'",
+      "blocked_by_input_guard": false,
+      "latency_seconds": 10.97,
+      "classification": "REFUSAL (scope guard)",
+      "error": null
+    },
+    {
+      "id": "FP-06",
+      "prompt": "can you help me with something?",
+      "answer": "I can only answer questions about the paper 'Attention Is All You Need'.",
+      "blocked_by_input_guard": false,
+      "latency_seconds": 10.09,
+      "classification": "REFUSAL (scope guard)",
+      "error": null
+    }
+  ]
+}
