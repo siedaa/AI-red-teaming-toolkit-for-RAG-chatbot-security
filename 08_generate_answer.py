@@ -183,6 +183,7 @@ def answer_query(query: str, top_k: int = TOP_K, pre_retrieved_results: list | N
     gemini = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 
     # 0. Input-side guard: block obvious attacks before any API call.
+    #    0a. The regex guard runs FIRST because it is free (no API, no model).
     blocked, reason = input_guard(query)
     if blocked:
         _safe(f"[INPUT GUARD] Blocked query matching pattern: {reason}")
@@ -192,6 +193,39 @@ def answer_query(query: str, top_k: int = TOP_K, pre_retrieved_results: list | N
             "full_sources": [],
             "answer": _FIXED_REFUSAL,
             "blocked_by_input_guard": True,
+            "blocked_by": "regex",
+            "ml_guard_score": None,
+        }
+
+    # 0b. Second input-side guard: the ML prompt classifier (ml_guard.py).
+    #     Imported LAZILY inside the function so that merely importing this
+    #     module never pulls in torch (which is slow) and so a missing/broken
+    #     ml_guard cannot break this module's import. The call is wrapped so
+    #     an unexpected exception can never break answer_query — ml_guard
+    #     itself already fails open internally, this is a second belt.
+    ml_blocked = False
+    ml_score = None
+    try:
+        from ml_guard import ml_guard as _ml_guard
+        _ml_result = _ml_guard(query)
+        ml_blocked = bool(_ml_result.get("blocked", False))
+        ml_score = _ml_result.get("score")
+    except Exception as _ml_exc:   # never let a guard failure break the answer path
+        _safe(f"[ML GUARD] unavailable (failing open): {type(_ml_exc).__name__}: {_ml_exc}")
+
+    if ml_blocked:
+        # Same fixed refusal string and same dict shape as the regex-blocked
+        # path (blocked_by_input_guard=True so app.py / the harness / reports
+        # keep working unchanged).
+        _safe(f"[INPUT GUARD] Blocked by ML classifier (score={ml_score:.2f})")
+        return {
+            "query": query,
+            "sources": [],
+            "full_sources": [],
+            "answer": _FIXED_REFUSAL,
+            "blocked_by_input_guard": True,
+            "blocked_by": "ml_guard",
+            "ml_guard_score": ml_score,
         }
 
     # 1. Retrieve relevant chunks (or reuse already-retrieved results).
@@ -285,6 +319,8 @@ ANSWER:"""
         "full_sources": results,  # includes display_content, image_path for UI
         "answer": answer,
         "blocked_by_input_guard": False,
+        "blocked_by": None,
+        "ml_guard_score": ml_score,
     }
 
 

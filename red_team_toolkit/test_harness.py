@@ -213,6 +213,12 @@ def worker_main(prompt_b64: str) -> int:
             "answer": ans["answer"],
             "sources": ans["sources"],
             "blocked_by_input_guard": ans.get("blocked_by_input_guard", False),
+            # Additive fields (ml_guard integration): which guard blocked, if
+            # any ("regex" | "ml_guard" | None), and the ML classifier's attack
+            # probability (float | None). .get() with a default keeps old callers
+            # (or an older 08_generate_answer.py without these keys) working.
+            "blocked_by": ans.get("blocked_by"),
+            "ml_guard_score": ans.get("ml_guard_score"),
             "error": None,
         }
     except Exception as exc:  # noqa: BLE001 — record & exit, don't crash parent
@@ -374,6 +380,11 @@ def main(timeout_s: int = DEFAULT_CALL_TIMEOUT_S, fresh: bool = False) -> None:
             "answer": None,
             "sources": None,
             "blocked_by_input_guard": None,
+            # Additive fields (ml_guard integration): which guard blocked, and
+            # the ML classifier's attack probability. Seeded as None so a
+            # resume against an older results file still parses cleanly.
+            "blocked_by": None,
+            "ml_guard_score": None,
             "error": None,
             "attempts": 0,
         }
@@ -390,6 +401,8 @@ def main(timeout_s: int = DEFAULT_CALL_TIMEOUT_S, fresh: bool = False) -> None:
                 record["sources"] = result["sources"]
                 record["latency_seconds"] = result["latency_seconds"]
                 record["blocked_by_input_guard"] = result.get("blocked_by_input_guard", False)
+                record["blocked_by"] = result.get("blocked_by")
+                record["ml_guard_score"] = result.get("ml_guard_score")
                 succeeded += 1
                 quota_streak = 0  # reset on success
                 _safe(f"done in {result['latency_seconds']}s")
