@@ -5,6 +5,7 @@ google-genai
 python-dotenv
 pillow
 numpy
+torch
 streamlit
 # groq
 # pytesseract

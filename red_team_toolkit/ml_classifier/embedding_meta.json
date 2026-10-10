@@ -1,0 +1,13 @@
+{
+  "model": "gemini-embedding-001",
+  "task_type": null,
+  "output_dimensionality": null,
+  "dimension": 3072,
+  "n_train": 57,
+  "n_test": 14,
+  "n_total": 71,
+  "delay_seconds": 1.0,
+  "timeout_seconds": 60,
+  "created_utc": "2026-10-10T12:25:25.597772+00:00",
+  "note": "Settings mirror 07_retrieve.py's embed_content() call so training vectors and live chat-query vectors match exactly (prevents train/serve skew)."
+}
