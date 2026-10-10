@@ -7,6 +7,12 @@ model in a single batched request, and produces an evaluation file with verdicts
 Usage:
     python red_team_toolkit/evaluator.py                    # evaluate latest run
     python red_team_toolkit/evaluator.py --run <filename>   # evaluate a specific run
+    python red_team_toolkit/evaluator.py --input <path>     # evaluate a run at any path
+    python red_team_toolkit/evaluator.py --output-prefix X  # name outputs evaluation_X_<ts>.json
+
+With neither --input nor --output-prefix, behavior is unchanged from before:
+the latest baseline_run is chosen and the output file keeps the default
+evaluation_baseline_<timestamp>.json name.
 """
 
 import json
@@ -240,11 +246,19 @@ def _merge(results: list[dict], verdicts: list[dict]) -> list[dict]:
     return merged
 
 
-def _save_evaluation(merged: list[dict], run_file: Path) -> Path:
-    """Save the merged evaluation to a timestamped file."""
+def _save_evaluation(merged: list[dict], run_file: Path,
+                     output_prefix: str = "evaluation_baseline") -> Path:
+    """Save the merged evaluation to a timestamped file.
+
+    output_prefix (additive, default unchanged): the output file is named
+    <output_prefix>_<timestamp>.json. The default "evaluation_baseline"
+    reproduces the original name exactly, so existing behavior — including
+    the baseline/patched report loaders that glob specific prefixes — is
+    preserved unless a caller explicitly asks for a different prefix.
+    """
     EVAL_DIR.mkdir(parents=True, exist_ok=True)
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-    out_path = EVAL_DIR / f"evaluation_baseline_{ts}.json"
+    out_path = EVAL_DIR / f"{output_prefix}_{ts}.json"
     payload = {
         "eval_metadata": {
             "created": datetime.now(timezone.utc).isoformat(),
@@ -297,8 +311,18 @@ def _print_summary(merged: list[dict]):
 #  CLI
 # ═══════════════════════════════════════════════════════════════════
 
-def main(run_file: str | None = None):
-    if run_file:
+def main(run_file: str | None = None,
+         run_input: str | None = None,
+         output_prefix: str = "evaluation_baseline"):
+    # --input <path>: an explicit path (absolute, or relative to cwd or
+    # results/). Takes precedence over --run. Default (None) is unchanged:
+    # fall back to --run, then to the latest baseline_run.
+    if run_input:
+        run_path = Path(run_input)
+        if not run_path.is_file():
+            # Also allow a bare filename that lives in results/.
+            run_path = RESULTS_DIR / run_input
+    elif run_file:
         run_path = RESULTS_DIR / run_file
         if not run_path.is_file():
             # Try without prefix
@@ -322,7 +346,7 @@ def main(run_file: str | None = None):
     verdicts = _judge_all(client, results)
 
     merged = _merge(results, verdicts)
-    out_path = _save_evaluation(merged, run_path)
+    out_path = _save_evaluation(merged, run_path, output_prefix=output_prefix)
 
     _safe(f"Saved evaluation to: {out_path.name}")
     _print_summary(merged)
@@ -343,12 +367,33 @@ def main(run_file: str | None = None):
         _safe("")
 
 
+def _parse_cli() -> tuple[str | None, str | None, str]:
+    """Tiny manual argv parser (same style as before) for the three optional
+    flags. Returns (run_file, run_input, output_prefix). With no flags the
+    defaults (None, None, "evaluation_baseline") keep the original behavior:
+    latest run selected, default output name.
+    """
+    run_file = None
+    run_input = None
+    output_prefix = "evaluation_baseline"   # unchanged default
+
+    for flag in ("--run", "--input", "--output-prefix"):
+        if flag in sys.argv:
+            idx = sys.argv.index(flag)
+            try:
+                value = sys.argv[idx + 1]
+            except IndexError:
+                continue
+            if flag == "--run":
+                run_file = value
+            elif flag == "--input":
+                run_input = value
+            else:
+                output_prefix = value
+
+    return run_file, run_input, output_prefix
+
+
 if __name__ == "__main__":
-    target = None
-    if "--run" in sys.argv:
-        idx = sys.argv.index("--run")
-        try:
-            target = sys.argv[idx + 1]
-        except IndexError:
-            pass
-    main(run_file=target)
+    run_file, run_input, output_prefix = _parse_cli()
+    main(run_file=run_file, run_input=run_input, output_prefix=output_prefix)
