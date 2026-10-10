@@ -6,6 +6,7 @@ python-dotenv
 pillow
 numpy
 torch
+matplotlib
 streamlit
 # groq
 # pytesseract
