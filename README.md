@@ -30,6 +30,15 @@ after — verdict counts 20/4/11 before vs 35/0/0 after, plus per-category chart
 attack demo.* See [red_team_toolkit/README.md](red_team_toolkit/README.md) for more
 screenshots, full details, setup instructions, and current findings.
 
+### ML Guard (PyTorch classifier)
+
+A second, optional input guard — a small PyTorch probe on Gemini embeddings — scores each
+prompt after the free regex guard and before any LLM call ([details](red_team_toolkit/ml_classifier/README.md)).
+In a 35-prompt re-run with both guards, **9 were stopped by regex, 24 by the ML guard, 2
+reached the LLM**, saving 33 generation calls while staying **35/35 SAFE before and after**
+(the LLM layer already refused those 2). Results are mostly in-sample, so this shows the
+guard is wired in and working — not how well it generalizes.
+
 ---
 
 ## Table of Contents
@@ -47,6 +56,7 @@ screenshots, full details, setup instructions, and current findings.
 - [Version Control](#version-control)
 - [Demo](#demo)
 - [AI Red Teaming Toolkit](#ai-red-teaming-toolkit-new)
+  - [ML Guard (PyTorch classifier)](#ml-guard-pytorch-classifier)
 
 ---
 
@@ -247,6 +257,10 @@ venv\Scripts\activate         # Windows
 
 # 3. Install dependencies
 pip install -r requirements.txt
+
+# 3b. (Optional) ML extras — only to enable the ML guard / classifier scripts.
+#     Without them the app still runs: the guard disables itself and fails open.
+pip install -r requirements-ml.txt
 
 # 4. Add your Gemini API key
 echo GEMINI_API_KEY=your_key_here > .env

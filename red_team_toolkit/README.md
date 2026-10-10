@@ -16,11 +16,13 @@ red_team_toolkit/
 ├── attack_prompts.json    # 35 attack prompts across 5 vulnerability categories
 ├── test_harness.py        # Runs each prompt against answer_query() in isolated subprocesses
 ├── evaluator.py           # Groq LLM-as-judge: scores each response (SAFE / PARTIALLY_VULNERABLE / VULNERABLE)
+├── ml_classifier/         # PyTorch prompt classifier (the ML guard) + its README
 ├── screenshots/           # Red Teaming tab screenshots (embedded below)
 ├── results/               # Raw attack runs and evaluation JSONs (timestamped)
 │   ├── baseline_run_*.json
 │   ├── evaluation_baseline_*.json   # before-guardrails evaluation
-│   └── evaluation_patched_*.json    # after-guardrails evaluation
+│   ├── evaluation_patched_*.json    # after-guardrails evaluation
+│   └── evaluation_mlguard_*.json    # both guards enabled evaluation
 └── reports/               # Human-readable write-ups and analysis
 ```
 
@@ -47,6 +49,14 @@ evaluator.py
 ## How to Run
 
 ### Prerequisites
+
+Install the base dependencies first (the toolkit works without torch — the ML guard
+below then disables itself and fails open):
+
+```bash
+pip install -r requirements.txt        # base app — no torch
+pip install -r requirements-ml.txt     # optional: adds torch + matplotlib for the ML guard
+```
 
 Set these environment variables (or add them to `venv/.env`):
 
@@ -134,6 +144,17 @@ Guardrails are implemented and verified: the full 35-prompt suite scores **35/35
 `reports/before_after_comparison_report.md` for the detailed side-by-side comparison and
 `reports/baseline_vulnerability_report.md` for the full baseline analysis (with CWE
 classifications and CVSS v3.1 scores).
+
+## ML Guard (PyTorch classifier)
+
+A second, optional input guard lives in `ml_classifier/`: a small PyTorch linear probe on
+Gemini embeddings that scores prompts after the regex guard and before any LLM call (see
+`ml_classifier/README.md` for how it works, its results, and its limitations). In a re-run
+with both guards enabled, **9/35 attacks were blocked by regex, 24/35 by the ML guard, and
+2/35 reached the LLM** — saving 33 generation calls, while the judge scored **35/35 SAFE
+both before and after**, because the LLM's own rules were already refusing the two that got
+through. Most of those 35 prompts were in the classifier's training data, so the re-run
+shows the guard is wired in and working — not how well it generalizes.
 
 ## Streamlit Red Teaming Tab
 

@@ -5,8 +5,6 @@ google-genai
 python-dotenv
 pillow
 numpy
-torch
-matplotlib
 streamlit
 # groq
 # pytesseract
@@ -14,4 +12,3 @@ streamlit
 # SpeechRecognition      # optional: classic offline speech engine (02_audio_lm.py)
 # pocketsphinx           # optional: the CMU Sphinx engine SpeechRecognition uses
 # commented out are not required in this project
-

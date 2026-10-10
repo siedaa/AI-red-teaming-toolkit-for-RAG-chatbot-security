@@ -1,0 +1,8 @@
+# Optional ML extras — only needed for the PyTorch classifier (the ML guard)
+# and the classifier scripts in red_team_toolkit/ml_classifier/.
+# The base app runs WITHOUT these: the guard disables itself and fails open.
+#
+#   pip install -r requirements-ml.txt
+#
+torch
+matplotlib

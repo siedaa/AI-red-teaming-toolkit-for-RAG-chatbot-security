@@ -124,6 +124,81 @@ def _load_before_evaluation() -> dict | None:
     return None
 
 
+# ── ML guard bonus loaders (additive; explicit filenames, never raise) ──
+# These two files are the single ML-guard re-run committed with this repo.
+# Explicit filenames (not a glob over "latest") so a future run file can never
+# silently change what this section displays, and so the section is static —
+# no API calls, no model loading, no torch import at display time.
+_ML_RUN_FILE = "baseline_run_20261011_011101.json"
+_ML_EVAL_FILE = "evaluation_mlguard_20261011_012026.json"
+_ML_TOTAL_ATTACKS = 35
+
+
+def _is_valid_ml_run(run_data: dict) -> bool:
+    """Complete run: exactly 35 records, none with an error, each with the
+    blocked_by/ml_guard_score fields present (may be None)."""
+    results = run_data.get("results", [])
+    if len(results) != _ML_TOTAL_ATTACKS:
+        return False
+    if any(r.get("error") for r in results):
+        return False
+    return all("blocked_by" in r and "ml_guard_score" in r for r in results)
+
+
+@st.cache_data
+def _load_ml_run() -> dict | None:
+    """The ML-guard attack run, or None if missing/invalid (never raises)."""
+    f = EVAL_RESULTS_DIR / _ML_RUN_FILE
+    if not f.is_file():
+        return None
+    try:
+        data = json.loads(f.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return None
+    return data if _is_valid_ml_run(data) else None
+
+
+@st.cache_data
+def _load_ml_evaluation() -> dict | None:
+    """The ML-guard evaluation (judge verdicts), or None if invalid. Must be a
+    complete, fully-judged evaluation like the before/after loaders require."""
+    f = EVAL_RESULTS_DIR / _ML_EVAL_FILE
+    if not f.is_file():
+        return None
+    try:
+        data = json.loads(f.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return None
+    return data if _is_full_evaluation(data) else None
+
+
+def _ml_blocked_counts(ml_run: dict) -> dict[str, int]:
+    """How many of the 35 attacks each layer handled."""
+    counts = {"regex": 0, "ml_guard": 0, "none": 0}
+    for r in ml_run.get("results", []):
+        bb = r.get("blocked_by")
+        if bb == "regex":
+            counts["regex"] += 1
+        elif bb == "ml_guard":
+            counts["ml_guard"] += 1
+        else:
+            counts["none"] += 1
+    return counts
+
+
+def _ml_category_counts(ml_run: dict) -> dict[str, dict[str, int]]:
+    """Per-category counts of blocked_by regex / ml_guard / none."""
+    cats: dict[str, dict[str, int]] = {}
+    for r in ml_run.get("results", []):
+        cat = r.get("category", "unknown")
+        bb = r.get("blocked_by")
+        key = bb if bb in ("regex", "ml_guard") else "none"
+        if cat not in cats:
+            cats[cat] = {"regex": 0, "ml_guard": 0, "none": 0}
+        cats[cat][key] += 1
+    return cats
+
+
 def _verdict_counts(eval_data: dict) -> dict[str, int]:
     """Count SAFE / PARTIALLY_VULNERABLE / VULNERABLE from evaluation results."""
     counts = {"SAFE": 0, "PARTIALLY_VULNERABLE": 0, "VULNERABLE": 0}
@@ -403,6 +478,73 @@ with tab_redteam:
                     st.markdown(f"**After** ({ex['after_verdict']})")
                     st.success(ex["after"])
 
+        # ── ML guard (bonus: PyTorch classifier) ──────────────────────
+        # Static section: reads two committed JSON files only — no API calls,
+        # no model loading, no torch import. Missing/invalid files degrade to
+        # a short st.info and the section is skipped (never raises).
+        ml_run  = _load_ml_run()
+        ml_eval = _load_ml_evaluation()
+
+        if ml_run is None and ml_eval is None:
+            st.info(
+                "ML-guard run files not present — this section is skipped. "
+                "See red_team_toolkit/ml_classifier/README.md."
+            )
+        else:
+            st.markdown("---")
+            st.markdown("### 🧠 ML guard (bonus: PyTorch classifier)")
+            st.markdown(
+                "A second, optional input guard: a small PyTorch linear probe on "
+                "Gemini embeddings runs after the free regex guard and before any "
+                "retrieval or generation."
+            )
+
+            if ml_run is None:
+                st.info("ML-guard run file missing or invalid — counts skipped.")
+            else:
+                counts = _ml_blocked_counts(ml_run)
+                total_sent = len(ml_run.get("results", []))
+                saved = counts["regex"] + counts["ml_guard"]
+
+                # ── Metrics row ──
+                k1, k2, k3, k4 = st.columns(4)
+                k1.metric("Blocked by regex", f"{counts['regex']} / {total_sent}")
+                k2.metric("Blocked by ML guard", f"{counts['ml_guard']} / {total_sent}")
+                k3.metric("Reached the LLM", f"{counts['none']} / {total_sent}")
+                k4.metric("Generation calls saved", f"{saved} / {total_sent}")
+
+                # ── Per-category table ──
+                st.markdown("**Where each attack category was stopped**")
+                cat_counts = _ml_category_counts(ml_run)
+                table_data = [
+                    {
+                        "Category": cat,
+                        "regex": c["regex"],
+                        "ml_guard": c["ml_guard"],
+                        "reached LLM": c["none"],
+                    }
+                    for cat, c in sorted(cat_counts.items())
+                ]
+                st.table(table_data)
+
+                if ml_eval is not None:
+                    ml_verdicts = _verdict_counts(ml_eval)
+                    st.caption(
+                        f"Judge verdicts for this run: "
+                        f"{ml_verdicts.get('SAFE', 0)} SAFE / "
+                        f"{ml_verdicts.get('PARTIALLY_VULNERABLE', 0)} PARTIALLY_VULNERABLE / "
+                        f"{ml_verdicts.get('VULNERABLE', 0)} VULNERABLE."
+                    )
+                else:
+                    st.info("ML-guard evaluation file missing — verdicts skipped.")
+
+            # Visible caveat — keep this text as-is (see ml_classifier/README.md).
+            st.warning(
+                "Most of these 35 prompts were in the classifier's training data, "
+                "so these counts show the guard is wired in and working, not how "
+                "well it generalizes. Held-out results are in the classifier README."
+            )
+
         # ── Live attack demo ──────────────────────────────────────────
         if ENABLE_LIVE_DEMO:
             st.markdown("---")
@@ -459,16 +601,37 @@ with tab_redteam:
                         try:
                             result = answer_query(prompt_to_run)
                             blocked = result.get("blocked_by_input_guard", False)
+                            # Which layer handled it. .get() with defaults so
+                            # older results (missing the newer keys) still render.
+                            layer = result.get("blocked_by")
+                            ml_score = result.get("ml_guard_score")
 
-                            if blocked:
+                            if blocked and layer == "regex":
                                 st.success(
-                                    "🛡️ **Blocked at input layer** — no LLM call made. "
-                                    "The `input_guard()` regex caught this prompt before "
-                                    "it reached the language model."
+                                    "🛡️ **Blocked by the regex guard** — no LLM call made. "
+                                    "The `input_guard()` pattern check caught this prompt "
+                                    "before it reached the classifier or the language model."
+                                )
+                            elif blocked and layer == "ml_guard":
+                                score_txt = (
+                                    f" (score={ml_score:.2f})" if isinstance(ml_score, float) else ""
+                                )
+                                st.success(
+                                    f"🤖 **Blocked by the ML guard{score_txt}** — no LLM call made. "
+                                    "The regex passed, then the PyTorch classifier scored this "
+                                    "prompt above the 0.5 attack threshold."
+                                )
+                            elif blocked:
+                                # Older result with blocked_by absent/None but still blocked.
+                                st.success(
+                                    "🛡️ **Blocked at input layer** — no LLM call made."
                                 )
                             else:
+                                score_txt = (
+                                    f" (ML guard score={ml_score:.2f})" if isinstance(ml_score, float) else ""
+                                )
                                 st.info(
-                                    "ℹ️ This prompt **reached the LLM** — review whether "
+                                    f"ℹ️ This prompt **reached the LLM**{score_txt} — review whether "
                                     "the response appropriately refused or stayed in scope."
                                 )
                                 st.markdown("**Answer:**")
