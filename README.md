@@ -1,15 +1,88 @@
-# Multimodal RAG — "Attention Is All You Need"
+# AI Red Teaming Toolkit for RAG Chatbots
 
-> A multimodal Retrieval-Augmented Generation system over the Transformer paper.
-> Extracts text, tables, and figures from the PDF, embeds everything with Google
-> Gemini, stores vectors in Chroma DB, and answers questions via grounded
-> generation with figure re-attachment for vision-rich answers.
+> An automated toolkit that attacks a RAG chatbot with 35 prompts across 5 categories
+> (prompt injection, jailbreak, role confusion, system prompt leakage, data extraction),
+> scores the responses with an LLM judge, documents the weaknesses, adds guardrails, and
+> re-tests. The chatbot under test is a multimodal RAG system over "Attention Is All You
+> Need". Everything runs from the command line against the chatbot's own `answer_query()`.
 
 **Built by Maha Fatima** | [LinkedIn Post](https://www.linkedin.com/posts/activity-7482876699869773824-71mx) | [arXiv:1706.03762](https://arxiv.org/abs/1706.03762) | Google Gemini API | ChromaDB | Streamlit
 
 ---
 
-## AI Red Teaming Toolkit (New)
+## Results at a glance
+
+| Verdict | Before guardrails | After guardrails |
+|---------|-------------------|------------------|
+| SAFE | 20 (57%) | 35 (100%) |
+| PARTIALLY_VULNERABLE | 4 (11%) | 0 |
+| VULNERABLE | 11 (31%) | 0 |
+
+Vulnerable or partially vulnerable responses fell from 15 of 35 (43%) to 0 of 35 on this prompt set.
+
+![Red Teaming Tab Overview](red_team_toolkit/screenshots/red_teaming_tab_overview.png)
+
+*The Red Teaming tab in `app.py`: 43% of attack prompts exploited before guardrails vs 0%
+after — verdict counts 20/4/11 before vs 35/0/0 after, plus per-category charts and a live
+attack demo.* See [red_team_toolkit/README.md](red_team_toolkit/README.md) for more
+screenshots, full details, setup instructions, and current findings.
+
+> Caveat: the guardrails were written after reading these 35 prompts' failures, so this result is in-sample. It shows the observed failures were fixed, not that the chatbot is secure against unseen attacks. Each category has 7 prompts and every verdict came from one LLM judge without human review.
+
+> Held-out check: 12 further attacks, drafted by the AI assistant after the guardrails existed and never used to design them, were run with the ML guard off. The regex plus system-prompt rules handled all 12 (10 fixed refusals, 2 summarized answers with no verbatim dump; the regex blocked only 1, so the system-prompt rules carried the rest). Small sample, one LLM judge, same author as the other assistant-drafted sets.
+
+Details: [baseline vulnerability report](red_team_toolkit/reports/baseline_vulnerability_report.md) · [before/after comparison report](red_team_toolkit/reports/before_after_comparison_report.md) — see its [Evaluation caveats](red_team_toolkit/reports/before_after_comparison_report.md#evaluation-caveats) and [Held-out check of the LLM layer](red_team_toolkit/reports/before_after_comparison_report.md#held-out-check-of-the-llm-layer) sections · [toolkit README](red_team_toolkit/README.md)
+
+---
+
+## How it works
+
+```
+attack_prompts.json (35 attacks, 5 categories)
+        │
+        ▼
+test_harness.py  →  answer_query() in its own subprocess per prompt
+        │            (regex guard, optional ML guard, hardened system prompt)
+        ▼
+results/baseline_run_<timestamp>.json    raw answers, latency, blocked_by
+        │
+        ▼
+evaluator.py  →  Groq LLM judge (openai/gpt-oss-120b): SAFE / PARTIALLY_VULNERABLE / VULNERABLE
+        │
+        ▼
+results/evaluation_*.json  →  reports/*.md   findings, caveats, before/after
+```
+
+The toolkit lives in [`red_team_toolkit/`](red_team_toolkit/): `attack_prompts.json`
+holds the curated attacks, `test_harness.py` runs each one through the chatbot's
+`answer_query()` directly (bypassing Streamlit) in an isolated subprocess, and
+`evaluator.py` judges every response with a Groq-hosted LLM evaluator. The write-ups
+live under `red_team_toolkit/reports/`.
+
+### Quick start
+
+Set these environment variables first (or add them to `venv/.env`): `GEMINI_API_KEY`
+(required by the chatbot's `answer_query()` for retrieval + generation) and
+`GROQ_API_KEY` (required by `evaluator.py` for the LLM judge).
+
+```bash
+pip install -r requirements.txt        # base app — no torch
+pip install -r requirements-ml.txt     # optional: adds torch + matplotlib for the ML guard
+
+python red_team_toolkit/test_harness.py
+python red_team_toolkit/test_harness.py --fresh
+python red_team_toolkit/test_harness.py --timeout 60
+
+python red_team_toolkit/evaluator.py
+python red_team_toolkit/evaluator.py --run baseline_run_20260906_030713.json
+```
+
+See [red_team_toolkit/README.md](red_team_toolkit/README.md) for details, prerequisites,
+and what each command does.
+
+---
+
+## Guardrails and ML guard
 
 This repo now includes an automated red-teaming toolkit that tests this RAG chatbot
 against common AI security vulnerabilities: prompt injection, jailbreaks, role confusion,
@@ -22,13 +95,6 @@ concentrated in system prompt leakage (6/7 vulnerable). Guardrails were then add
 (input-side regex filter + a hardened system prompt) and the full suite was re-run:
 **35 SAFE / 0 / 0 — 0% vulnerable**, as verified in the
 [before/after comparison report](red_team_toolkit/reports/before_after_comparison_report.md).
-
-![Red Teaming Tab Overview](red_team_toolkit/screenshots/red_teaming_tab_overview.png)
-
-*The Red Teaming tab in `app.py`: 43% of attack prompts exploited before guardrails vs 0%
-after — verdict counts 20/4/11 before vs 35/0/0 after, plus per-category charts and a live
-attack demo.* See [red_team_toolkit/README.md](red_team_toolkit/README.md) for more
-screenshots, full details, setup instructions, and current findings.
 
 ### ML Guard (PyTorch classifier)
 
@@ -45,24 +111,36 @@ not by an independent author.
 
 ## Table of Contents
 
-- [Overview](#overview)
-- [Applied Mathematics in This Project](#applied-mathematics-in-this-project)
-- [Pipeline Architecture](#pipeline-architecture)
-- [Setup](#setup)
-- [Script-by-Script Guide](#script-by-script-guide)
-- [Querying the System](#querying-the-system)
-- [Streamlit App](#streamlit-app)
-- [Technical Highlights](#technical-highlights)
-- [Edge Cases & Error Handling](#edge-cases--error-handling)
-- [Known Limitations](#known-limitations)
-- [Version Control](#version-control)
-- [Demo](#demo)
-- [AI Red Teaming Toolkit](#ai-red-teaming-toolkit-new)
+- [Results at a glance](#results-at-a-glance)
+- [How it works](#how-it-works)
+- [Guardrails and ML guard](#guardrails-and-ml-guard)
   - [ML Guard (PyTorch classifier)](#ml-guard-pytorch-classifier)
+- [Part 2: The RAG Chatbot Under Test](#part-2-the-rag-chatbot-under-test)
+  - [Overview](#overview)
+  - [Applied Mathematics in This Project](#applied-mathematics-in-this-project)
+  - [Pipeline Architecture](#pipeline-architecture)
+  - [Setup](#setup)
+  - [Script-by-Script Guide](#script-by-script-guide)
+  - [Querying the System](#querying-the-system)
+  - [Streamlit App (`app.py`)](#streamlit-app-apppy)
+  - [Technical Highlights](#technical-highlights)
+  - [Edge Cases & Error Handling](#edge-cases--error-handling)
+  - [Known Limitations](#known-limitations)
+  - [Version Control](#version-control)
+  - [Demo](#demo)
 
 ---
 
-## Overview
+# Part 2: The RAG Chatbot Under Test
+
+The rest of this README documents the system the toolkit attacks: a multimodal RAG
+pipeline over "Attention Is All You Need" that extracts text, tables, and figures from
+the paper, embeds them into one vector store, and answers questions with grounded
+generation.
+
+---
+
+### Overview
 
 This project implements a full RAG pipeline over the seminal "Attention Is All
 You Need" paper. Unlike many RAG demos that handle only text, this system
@@ -80,13 +158,13 @@ grounded **only** in the retrieved context.
 
 ---
 
-## Applied Mathematics in This Project
+### Applied Mathematics in This Project
 
 This system is built on several core applied-mathematical concepts that enable
 it to unify heterogeneous content (text, tables, figures) into a single
 retrievable, rankable structure.
 
-### 1. High-Dimensional Embedding Space
+#### 1. High-Dimensional Embedding Space
 
 Every element (text chunk, table, figure caption) is mapped into a **3072-dimensional**
 real-valued vector space via Gemini Embedding 001. This is a learned non-linear
@@ -102,7 +180,7 @@ together** in this high-dimensional space, regardless of modality. A table
 about BLEU scores and a paragraph describing the same results end up as nearby
 vectors, enabling cross-modality retrieval from a single query.
 
-### 2. Cosine Similarity Ranking
+#### 2. Cosine Similarity Ranking
 
 Retrieval is framed as a **nearest-neighbor search** problem. Given a query
 vector $\mathbf{q} \in \mathbb{R}^{3072}$ and a corpus of $N$ document vectors
@@ -120,7 +198,7 @@ where $1$ means identical direction (perfect match) and $0$ means orthogonal
 (no relation). Chroma stores cosine **distance** ($1 - \text{sim}$), which is
 converted back to similarity for intuitive display.
 
-### 3. HNSW Approximate Nearest Neighbor Index
+#### 3. HNSW Approximate Nearest Neighbor Index
 
 Exact brute-force cosine search over $N$ vectors scales as $O(N \cdot d)$ per
 query, where $d = 3072$. For the 35-element corpus here this is negligible, but
@@ -135,7 +213,7 @@ nearest neighbor, dropping to lower layers to refine. Expected query complexity
 is $O(\log N)$ rather than $O(N)$, making it feasible to scale to millions of
 vectors while preserving near-exact recall.
 
-### 4. Word-Level Geometric Heuristics for Borderless Table Extraction
+#### 4. Word-Level Geometric Heuristics for Borderless Table Extraction
 
 The paper's tables have no visible ruled lines, so standard table detection
 fails. Instead, the system applies **geometric clustering** on pdfplumber's
@@ -163,7 +241,7 @@ word-level bounding boxes:
    heading patterns, sentence-boundary detection, known keyword lists) marks
    where table data ends and body prose resumes.
 
-### 5. Dual-Content Indexing Scheme
+#### 5. Dual-Content Indexing Scheme
 
 Each element is stored with **two distinct text fields**, serving different
 mathematical roles:
@@ -180,7 +258,7 @@ description (maximising readability). The key insight is that the embedding
 vector is a lossy compression of `embedding_text` — richer input text yields
 more discriminative vectors.
 
-### 6. Exponential Backoff for API Rate Limits
+#### 6. Exponential Backoff for API Rate Limits
 
 The retry logic uses **exponential backoff** with a cap:
 
@@ -196,7 +274,7 @@ unbounded delays.
 
 ---
 
-## Pipeline Architecture
+### Pipeline Architecture
 
 ```
 PDF ("Attention Is All You Need")
@@ -237,15 +315,15 @@ earlier steps.
 
 ---
 
-## Setup
+### Setup
 
-### Prerequisites
+#### Prerequisites
 
 - Python 3.12+
 - A Google Gemini API key (free tier works; get one at
   [aistudio.google.com/apikey](https://aistudio.google.com/apikey))
 
-### Installation
+#### Installation
 
 ```bash
 # 1. Clone the repo
@@ -268,7 +346,7 @@ pip install -r requirements-ml.txt
 echo GEMINI_API_KEY=your_key_here > .env
 ```
 
-### Download the source PDF
+#### Download the source PDF
 
 The PDF is excluded from version control (see [.gitignore](#version-control)).
 Download it from arXiv:
@@ -283,9 +361,9 @@ and place it in the project root.
 
 ---
 
-## Script-by-Script Guide
+### Script-by-Script Guide
 
-### 00 — Inspect PDF (`00_inspect_pdf.py`)
+#### 00 — Inspect PDF (`00_inspect_pdf.py`)
 
 Opens the PDF and prints basic metadata: page count, text preview per page,
 number of embedded images per page. Use this to understand the document
@@ -295,7 +373,7 @@ structure before extraction.
 python 00_inspect_pdf.py
 ```
 
-### 01 — Extract Text (`01_extract_text.py`)
+#### 01 — Extract Text (`01_extract_text.py`)
 
 Uses PyMuPDF (`fitz`) block-level extraction to extract body text. Key details:
 
@@ -311,7 +389,7 @@ Uses PyMuPDF (`fitz`) block-level extraction to extract body text. Key details:
 
 **Output:** `extracted/text_chunks.json` (25 chunks)
 
-### 02 — Extract Tables (`02_extract_tables.py`)
+#### 02 — Extract Tables (`02_extract_tables.py`)
 
 Extracts the paper's tables (pages 6, 8, 9, 10) using pdfplumber. These tables
 have **no visible borders**, so the standard `extract_tables()` fails.
@@ -330,7 +408,7 @@ have **no visible borders**, so the standard `extract_tables()` fails.
 
 **Output:** `extracted/tables.json` (4 tables)
 
-### 03 — Extract Figures (`03_extract_figures.py`)
+#### 03 — Extract Figures (`03_extract_figures.py`)
 
 Extracts 5 figures from the paper using two strategies:
 
@@ -345,7 +423,7 @@ caption region below each figure image.
 
 **Output:** `extracted/images/*.png`, `extracted/figures.json`
 
-### 04 — Caption Figures (`04_caption_figures.py`)
+#### 04 — Caption Figures (`04_caption_figures.py`)
 
 Sends each extracted figure image to **Gemini 2.5 Flash** with a vision prompt
 asking for a 4–6 sentence description. The resulting `vision_description` is
@@ -355,7 +433,7 @@ A 2-second delay between API calls avoids rate limits during batch processing.
 
 **Output:** `extracted/figures.json` (enriched with `vision_description`)
 
-### 05 — Unify Elements (`05_unify_elements.py`)
+#### 05 — Unify Elements (`05_unify_elements.py`)
 
 Combines text chunks, tables, and figures into a single unified schema:
 
@@ -381,7 +459,7 @@ would produce a meaningless vector).
 **Output:** `extracted/unified_elements.json` (35 elements: 25 text, 4 tables,
 6 figures — one extra figure from splitting a grouped image)
 
-### 06 — Build Vector Store (`06_build_vectorstore.py`)
+#### 06 — Build Vector Store (`06_build_vectorstore.py`)
 
 1. Embeds every element using **Gemini Embedding 001** (3072-dimensional
    vectors — higher quality than the default all-MiniLM ONNX model).
@@ -396,7 +474,7 @@ would produce a meaningless vector).
 
 **Output:** `chroma_db/` (persistent vector store directory)
 
-### 07 — Retrieve (`07_retrieve.py`)
+#### 07 — Retrieve (`07_retrieve.py`)
 
 A reusable `retrieve(query, top_k=4)` function used by the generation script
 and the Streamlit app:
@@ -414,7 +492,7 @@ and the Streamlit app:
 - **CLI mode**: `python 07_retrieve.py` runs three test queries and prints
   ranked results for manual inspection.
 
-### 08 — Generate Answer (`08_generate_answer.py`)
+#### 08 — Generate Answer (`08_generate_answer.py`)
 
 The full RAG generation pipeline:
 
@@ -443,9 +521,9 @@ The full RAG generation pipeline:
 
 ---
 
-## Querying the System
+### Querying the System
 
-### Via Streamlit (recommended)
+#### Via Streamlit (recommended)
 
 ```bash
 python -m streamlit run app.py
@@ -457,7 +535,7 @@ Opens a browser UI where you can:
 - View the generated answer with expandable source cards
 - See actual figure images in the sources
 
-### Via CLI (for testing)
+#### Via CLI (for testing)
 
 ```bash
 # Test retrieval only
@@ -469,7 +547,7 @@ python 08_generate_answer.py
 
 ---
 
-## Streamlit App (`app.py`)
+### Streamlit App (`app.py`)
 
 The frontend is a **thin UI layer** — it imports `retrieve()` and
 `answer_query()` from the backend scripts rather than duplicating any pipeline
@@ -486,7 +564,7 @@ Key features:
 | **Source cards** | Expandable section showing each retrieved source with type-specific rendering |
 | **Figure images** | `st.image()` displays actual diagrams in source cards |
 | **Sidebar** | About section with project description |
-| **🛡️ Red Teaming tab** | Second tab alongside Chat: before/after guardrail results, verdict charts, example attack transcripts, and a live attack demo (details in [AI Red Teaming Toolkit](#ai-red-teaming-toolkit-new)) |
+| **🛡️ Red Teaming tab** | Second tab alongside Chat: before/after guardrail results, verdict charts, example attack transcripts, and a live attack demo (details in [Guardrails and ML guard](#guardrails-and-ml-guard)) |
 | **Footer** | Attribution to the paper, Gemini API, and ChromaDB |
 
 Session state (`st.session_state`) preserves results across Streamlit
@@ -494,25 +572,25 @@ re-renders so the answer does not disappear when interacting with widgets.
 
 ---
 
-## Technical Highlights
+### Technical Highlights
 
-### Dual-Content Strategy
+#### Dual-Content Strategy
 What gets vectorised (`embedding_text`) differs from what gets displayed
 (`display_content`). For figures, the embedding includes both the caption and
 the vision description (richer search), while display shows only the description
 (cleaner reading).
 
-### Borderless Table Extraction
+#### Borderless Table Extraction
 pdfplumber's `extract_tables()` relies on visible ruled lines — absent in this
 paper. The system falls back to low-level word extraction (`x_tolerance=1`),
 groups words by y-position, and applies heuristic table-boundary detection.
 
-### Figure Extraction: Two Strategies
+#### Figure Extraction: Two Strategies
 Figures can be embedded raster images (direct object extraction via xref) or
 vector-drawn diagrams (full-page pixmap render at 144 DPI). The code
 auto-detects which case applies per page.
 
-### Shared Quota-Resilient API Retry
+#### Shared Quota-Resilient API Retry
 A single `_api_retry()` helper in `07_retrieve.py` handles rate-limit errors
 for both the embedding API and the generation API. Features:
 - Catches only `429`/`RESOURCE_EXHAUSTED` — other errors propagate immediately
@@ -521,18 +599,18 @@ for both the embedding API and the generation API. Features:
 - Hard timeout of 180s total retry time
 - Interruptible polling sleep (0.2s increments) for responsive Ctrl+C
 
-### Importing Digit-Starting Modules
+#### Importing Digit-Starting Modules
 Python forbids `from 07_retrieve import retrieve`. The project uses
 `importlib.import_module("07_retrieve")` as a workaround, repeated in three
 files.
 
-### Unicode-Safe Console Output
+#### Unicode-Safe Console Output
 Windows `cp1252` cannot encode many Unicode characters. A `_safe()` helper
 writes UTF-8 bytes directly to `sys.stdout.buffer` with `errors="replace"`.
 
 ---
 
-## Edge Cases & Error Handling
+### Edge Cases & Error Handling
 
 The pipeline explicitly handles 28+ edge cases across the extraction,
 retrieval, and UI stages, including:
@@ -558,7 +636,7 @@ retrieval, and UI stages, including:
 
 ---
 
-## Known Limitations
+### Known Limitations
 
 | Limitation | Explanation |
 |-----------|-------------|
@@ -574,7 +652,7 @@ retrieval, and UI stages, including:
 
 ---
 
-## Version Control
+### Version Control
 
 The following are excluded from git (see `.gitignore`):
 
@@ -590,7 +668,7 @@ The following are excluded from git (see `.gitignore`):
 
 ---
 
-## Demo
+### Demo
 
 Three example queries demonstrating the system:
 

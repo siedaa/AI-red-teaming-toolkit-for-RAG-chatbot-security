@@ -10,6 +10,8 @@ Usage:
     python red_team_toolkit/test_harness.py --fresh         # start a brand-new run, ignoring prior progress
     python red_team_toolkit/test_harness.py --timeout 45    # override per-call timeout (s)
     python red_team_toolkit/test_harness.py --worker <b64>  # internal: run one prompt (used by parent)
+    python red_team_toolkit/test_harness.py --prompts <path>     # alternate prompts file (default: attack_prompts.json)
+    python red_team_toolkit/test_harness.py --run-prefix <name>  # run-file/resume prefix (default: baseline_run)
 
 Output:
     red_team_toolkit/results/baseline_run_<timestamp>.json
@@ -106,12 +108,12 @@ def _setup_environment() -> None:
         )
 
 
-def _load_attack_prompts() -> list[dict]:
-    """Load and validate attack_prompts.json."""
-    with open(ATTACK_JSON, "r", encoding="utf-8") as f:
+def _load_attack_prompts(attack_json: Path = ATTACK_JSON) -> list[dict]:
+    """Load and validate the attack prompts file (default: attack_prompts.json)."""
+    with open(attack_json, "r", encoding="utf-8") as f:
         prompts = json.load(f)
     if not isinstance(prompts, list) or not prompts:
-        raise ValueError("attack_prompts.json must be a non-empty list.")
+        raise ValueError(f"{attack_json.name} must be a non-empty list.")
     return prompts
 
 
@@ -119,12 +121,12 @@ def _load_attack_prompts() -> list[dict]:
 #  Resumability helpers
 # ═══════════════════════════════════════════════════════════════════
 
-def _find_existing_run() -> Path | None:
-    """Find the most recent baseline_run_*.json or *.partial.json."""
+def _find_existing_run(run_prefix: str = "baseline_run") -> Path | None:
+    """Find the most recent <run_prefix>_*.json or *.partial.json."""
     if not RESULTS_DIR.is_dir():
         return None
     candidates = sorted(
-        RESULTS_DIR.glob("baseline_run_*.json"),
+        RESULTS_DIR.glob(f"{run_prefix}_*.json"),
         key=lambda p: p.stat().st_mtime,
         reverse=True,
     )
@@ -292,23 +294,24 @@ def _run_prompt_in_subprocess(prompt: str, timeout_s: int) -> dict:
 #  Main orchestration
 # ═══════════════════════════════════════════════════════════════════
 
-def main(timeout_s: int = DEFAULT_CALL_TIMEOUT_S, fresh: bool = False) -> None:
+def main(timeout_s: int = DEFAULT_CALL_TIMEOUT_S, fresh: bool = False,
+         prompts_path: Path = ATTACK_JSON, run_prefix: str = "baseline_run") -> None:
     _setup_environment()
     answer_mod = importlib.import_module("08_generate_answer")  # for metadata
 
-    prompts = _load_attack_prompts()
+    prompts = _load_attack_prompts(prompts_path)
     total = len(prompts)
 
     run_id = datetime.now().strftime("%Y%m%d_%H%M%S")
     _safe(f"Project root     : {PROJECT_ROOT}")
-    _safe(f"Attack set       : {total} prompts in {ATTACK_JSON.name}")
+    _safe(f"Attack set       : {total} prompts in {prompts_path.name}")
     _safe(f"Output dir       : {RESULTS_DIR}")
     _safe(f"Per-call timeout : {timeout_s}s (default {DEFAULT_CALL_TIMEOUT_S}s)")
     _safe(f"Max attempts     : {MAX_ATTEMPTS} per prompt")
 
     # ── Resumability: find existing run or start fresh ─────────────
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
-    existing_file = None if fresh else _find_existing_run()
+    existing_file = None if fresh else _find_existing_run(run_prefix)
 
     if existing_file:
         prior_results = _load_existing_results(existing_file)
@@ -325,7 +328,7 @@ def main(timeout_s: int = DEFAULT_CALL_TIMEOUT_S, fresh: bool = False) -> None:
     else:
         prior_results = []
         succeeded_ids = set()
-        out_path = RESULTS_DIR / f"baseline_run_{run_id}.json"
+        out_path = RESULTS_DIR / f"{run_prefix}_{run_id}.json"
         partial_path = out_path
         if fresh:
             _safe("Mode            : FRESH (ignoring prior progress)")
@@ -482,4 +485,20 @@ if __name__ == "__main__":
 
     fresh = "--fresh" in sys.argv
 
-    main(timeout_s=timeout, fresh=fresh)
+    # --prompts <path> : alternate prompts file (default: attack_prompts.json).
+    # --run-prefix <s>  : run-file name/resume-glob prefix (default: baseline_run).
+    # Resolved immediately (before main() chdirs) so a relative path is
+    # interpreted against the directory the command was launched from.
+    prompts_path = ATTACK_JSON
+    if "--prompts" in sys.argv:
+        p_idx = sys.argv.index("--prompts")
+        if p_idx + 1 < len(sys.argv):
+            prompts_path = Path(sys.argv[p_idx + 1]).expanduser().resolve()
+
+    run_prefix = "baseline_run"
+    if "--run-prefix" in sys.argv:
+        r_idx = sys.argv.index("--run-prefix")
+        if r_idx + 1 < len(sys.argv) and sys.argv[r_idx + 1]:
+            run_prefix = sys.argv[r_idx + 1]
+
+    main(timeout_s=timeout, fresh=fresh, prompts_path=prompts_path, run_prefix=run_prefix)
