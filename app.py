@@ -10,11 +10,34 @@ is purely a UI layer on top of the same backend.
 """
 
 import importlib
+import importlib.util
 import json
 import os
+import socket
 from pathlib import Path
 
+# ── IPv4-first DNS workaround ────────────────────────────────────────────
+# This machine's IPv6 route to Google's APIs intermittently drops the TLS
+# handshake ("SSL: UNEXPECTED_EOF_WHILE_READING"). Preferring A (IPv4)
+# records in getaddrinfo results — the same patch as worker_main() in
+# red_team_toolkit/test_harness.py — lets httpx connect successfully.
+# Applied once, guarded so it can never raise or break startup.
+try:
+    _orig_gai = socket.getaddrinfo
+
+    def _ipv4_first(*args, **kwargs):
+        results = _orig_gai(*args, **kwargs)
+        v4 = [r for r in results if r[0] == socket.AF_INET]
+        v6 = [r for r in results if r[0] == socket.AF_INET6]
+        return v4 + v6
+
+    socket.getaddrinfo = _ipv4_first
+except Exception:
+    pass
+
 import streamlit as st
+
+import ml_guard  # cheap: no torch import, no API calls at module import time
 
 # ── Import pipeline logic ──────────────────────────────────────────
 # Names starting with a digit aren't valid Python identifiers, so we
@@ -27,6 +50,33 @@ answer_query  = _answer_mod.answer_query
 
 # ── Config ────────────────────────────────────────────────────────
 ENABLE_LIVE_DEMO = os.getenv("ENABLE_LIVE_DEMO", "true").lower() == "true"
+
+# ── Guard status (computed once at startup; no API calls, no torch import).
+# Env vars are read exactly the way ml_guard.py reads them at call time;
+# torch is probed with find_spec (never imported) and the chosen checkpoint
+# file is checked for existence, so a leaked environment variable or a
+# missing file can never silently switch the guard off unnoticed.
+_ML_ENABLED = os.getenv("ENABLE_ML_GUARD", "true").strip().lower() in ("true", "1", "yes", "on")
+_ML_MODEL_CHOICE = os.getenv("ML_GUARD_MODEL", "linear").strip().lower()
+_ML_TORCH_INSTALLED = importlib.util.find_spec("torch") is not None
+_ML_CHECKPOINT_EXISTS = (ml_guard.CKPT_DIR / f"{_ML_MODEL_CHOICE}_best.pt").is_file()
+_ML_GUARD_ACTIVE = _ML_ENABLED and _ML_TORCH_INSTALLED and _ML_CHECKPOINT_EXISTS
+if not _ML_ENABLED:
+    _ML_GUARD_REASON = f"disabled by ENABLE_ML_GUARD={os.getenv('ENABLE_ML_GUARD', '')}"
+elif not _ML_TORCH_INSTALLED:
+    _ML_GUARD_REASON = "torch not installed"
+else:
+    _ML_GUARD_REASON = "checkpoint missing"
+
+# Transient network failures shown as a short friendly warning instead of a
+# raw traceback (quota errors keep the existing st.error handlers).
+_NETWORK_ERROR_MARKERS = ("SSL", "UNEXPECTED_EOF", "Server disconnected",
+                          "timed out", "ConnectError")
+
+
+def _is_network_error(exc: Exception) -> bool:
+    text = str(exc)
+    return any(marker in text for marker in _NETWORK_ERROR_MARKERS)
 
 # ═══════════════════════════════════════════════════════════════════
 #  Page configuration
@@ -50,10 +100,33 @@ with st.sidebar:
         "'Attention Is All You Need' paper into one retrieval "
         "pipeline using the Gemini API."
     )
+    st.markdown("### Guard status")
+    st.markdown("Regex guard: **active**")
+    if _ML_GUARD_ACTIVE:
+        st.success(f"ML guard: ACTIVE ({_ML_MODEL_CHOICE})")
+    else:
+        st.error(f"ML guard: OFF ({_ML_GUARD_REASON})")
     if ENABLE_LIVE_DEMO:
         st.success("🛡️ Live attack demo: ON")
     else:
         st.info("🛡️ Live attack demo: OFF (set ENABLE_LIVE_DEMO=true to enable)")
+
+
+# ── ML-guard warm-up (additive): load ONLY the model — the cached
+# ml_guard._load_model() — never the embedding call, so the first attack in
+# a recording does not pay the torch import delay. Cached per process and
+# wrapped so a failure can never crash the app.
+@st.cache_resource
+def _warm_up_ml_guard(model_choice: str):
+    from ml_guard import _load_model
+    return _load_model(model_choice)
+
+
+if ENABLE_LIVE_DEMO and _ML_GUARD_ACTIVE:
+    try:
+        _warm_up_ml_guard(_ML_MODEL_CHOICE)
+    except Exception:
+        pass
 
 # ═══════════════════════════════════════════════════════════════════
 #  Helper: load evaluation data (cached)
@@ -290,7 +363,10 @@ with tab_chat:
                 st.error(f"Quota error: {e}")
             except Exception as e:
                 st.session_state.answer = None
-                st.error(f"An unexpected error occurred:\n\n{e}")
+                if _is_network_error(e):
+                    st.warning("Network hiccup talking to the API, please click again")
+                else:
+                    st.error(f"An unexpected error occurred:\n\n{e}")
 
     # ── Source card helper ───────────────────────────────────────────
     def _draw_source_card(r: dict):
@@ -654,7 +730,10 @@ with tab_redteam:
                         except RuntimeError as e:
                             st.error(f"API quota error: {e}")
                         except Exception as e:
-                            st.error(f"Error running attack: {e}")
+                            if _is_network_error(e):
+                                st.warning("Network hiccup talking to the API, please click again")
+                            else:
+                                st.error(f"Error running attack: {e}")
             else:
                 st.caption("Select a prompt above, then click **Run Attack**.")
         else:
