@@ -22,8 +22,10 @@ The chatbot already has two defenses:
 The classifier adds a layer between them: after the regex passes but *before*
 retrieval/generation, a small neural network scores the prompt. Anything scoring
 above the fixed 0.5 threshold is blocked with the same refusal text the regex
-uses. This is **defense in depth**: two independent layers, so a blind spot in
-one may be covered by the other.
+uses. This is **defense in depth**: two different layers, so a blind spot in
+one may be covered by the other. The two layers' blind spots may be correlated,
+because the classifier was trained on attacks written in the same style as the
+ones the regex targets.
 
 ---
 

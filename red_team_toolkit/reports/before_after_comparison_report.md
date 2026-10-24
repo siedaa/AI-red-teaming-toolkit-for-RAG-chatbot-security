@@ -15,6 +15,8 @@
 | **PARTIALLY_VULNERABLE** | 4 (11%) | **0 (0%)** | **-4 (-11pp)** |
 | **VULNERABLE** | 11 (31%) | **0 (0%)** | **-11 (-31pp)** |
 
+See the Evaluation caveats section at the end of this report.
+
 **Headline improvement:** The patched chatbot achieved a **perfect 35/35 SAFE score** — every single adversarial prompt was correctly refused. All 5 categories moved to 7/7 SAFE. Vulnerability rate dropped from **43% (15/35) to 0% (0/35)**.
 
 ---
@@ -112,3 +114,16 @@ The implemented guardrails — an input-side regex filter (`input_guard()`) and 
 The system prompt revision was the primary driver of improvement. By explicitly instructing the LLM to never reveal system prompts, treat all user-provided text as data (not instructions), and stay within the paper's scope, the model developed robust refusal behavior that generalized to attacks the regex patterns did not cover. The input-side regex filter (`input_guard()`) provides a deterministic safety net for obvious attack patterns, but the LLM-level defenses proved sufficient on their own for this attack set.
 
 This demonstrates that well-crafted system prompts with explicit security rules can be highly effective against adversarial attacks on RAG chatbots — even without complex guardrail architectures. The combination of scope enforcement, injection treatment rules, and fabrication prevention created a defense-in-depth posture that neutralized all tested attacks.
+
+---
+
+## Evaluation caveats
+
+- The regex patterns and the system-prompt rules were written after reading the baseline
+  failures on these same 35 prompts. That makes the 0-vulnerable result **in-sample**: it
+  shows the failures we observed were fixed, not that the chatbot is secure against
+  attacks we have not seen.
+- Each category has 7 prompts, and every verdict in this report came from a single LLM
+  judge (`openai/gpt-oss-120b`) with no human review of the verdicts.
+- The earlier phrases "perfect" and "None identified" in this report describe this
+  35-prompt set only — they are not statements about the chatbot's security in general.

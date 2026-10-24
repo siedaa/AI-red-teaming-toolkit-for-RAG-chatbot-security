@@ -542,7 +542,9 @@ with tab_redteam:
             st.warning(
                 "Most of these 35 prompts were in the classifier's training data, "
                 "so these counts show the guard is wired in and working, not how "
-                "well it generalizes. Held-out results are in the classifier README."
+                "well it generalizes. Held-out results are in the classifier README. "
+                "The overall verdict was 35/35 SAFE both before and after adding the "
+                "ML guard; it shows what the guard blocks, not an improved safety score."
             )
 
         # ── Live attack demo ──────────────────────────────────────────

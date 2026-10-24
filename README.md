@@ -37,7 +37,9 @@ prompt after the free regex guard and before any LLM call ([details](red_team_to
 In a 35-prompt re-run with both guards, **9 were stopped by regex, 24 by the ML guard, 2
 reached the LLM**, saving 33 generation calls while staying **35/35 SAFE before and after**
 (the LLM layer already refused those 2). Results are mostly in-sample, so this shows the
-guard is wired in and working — not how well it generalizes.
+guard is wired in and working — not how well it generalizes. The fresh, stress, and
+augmentation sets used to build and check the classifier were drafted by the AI assistant,
+not by an independent author.
 
 ---
 

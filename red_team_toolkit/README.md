@@ -145,6 +145,13 @@ Guardrails are implemented and verified: the full 35-prompt suite scores **35/35
 `reports/baseline_vulnerability_report.md` for the full baseline analysis (with CWE
 classifications and CVSS v3.1 scores).
 
+**Evaluation caveats:** the regex patterns and system-prompt rules were written after
+reading the baseline failures on these same 35 prompts, so the 0% vulnerable result is
+in-sample — it shows the observed failures were fixed, not that the chatbot is secure
+against unseen attacks. Each category has 7 prompts, and every verdict came from one LLM
+judge (`openai/gpt-oss-120b`) with no human review. The report's phrases "perfect" and
+"None identified" describe this 35-prompt set only.
+
 ## ML Guard (PyTorch classifier)
 
 A second, optional input guard lives in `ml_classifier/`: a small PyTorch linear probe on
@@ -154,7 +161,9 @@ with both guards enabled, **9/35 attacks were blocked by regex, 24/35 by the ML 
 2/35 reached the LLM** — saving 33 generation calls, while the judge scored **35/35 SAFE
 both before and after**, because the LLM's own rules were already refusing the two that got
 through. Most of those 35 prompts were in the classifier's training data, so the re-run
-shows the guard is wired in and working — not how well it generalizes.
+shows the guard is wired in and working — not how well it generalizes. The fresh, stress,
+and augmentation sets used to build and check the classifier were drafted by the AI
+assistant, not by an independent author.
 
 ## Streamlit Red Teaming Tab
 
