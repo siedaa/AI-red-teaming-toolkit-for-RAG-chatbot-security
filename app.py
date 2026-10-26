@@ -39,17 +39,26 @@ import streamlit as st
 
 import ml_guard  # cheap: no torch import, no API calls at module import time
 
+# ── Showcase mode ─────────────────────────────────────────────────
+# SHOWCASE_MODE=true runs the app with no API key and no vector store: the
+# Red Teaming tab renders the saved results, while the chat and the live
+# attack demo are switched off. The pipeline (chromadb, google-genai) is
+# never imported, so a hosted copy only needs streamlit + pandas.
+# Used by showcase/streamlit_app.py for Streamlit Community Cloud.
+SHOWCASE_MODE = os.getenv("SHOWCASE_MODE", "false").strip().lower() in ("true", "1", "yes", "on")
+
 # ── Import pipeline logic ──────────────────────────────────────────
 # Names starting with a digit aren't valid Python identifiers, so we
 # use importlib instead of a plain "from 07_retrieve import ...".
-_retrieve_mod = importlib.import_module("07_retrieve")
-retrieve      = _retrieve_mod.retrieve
+if not SHOWCASE_MODE:
+    _retrieve_mod = importlib.import_module("07_retrieve")
+    retrieve      = _retrieve_mod.retrieve
 
-_answer_mod   = importlib.import_module("08_generate_answer")
-answer_query  = _answer_mod.answer_query
+    _answer_mod   = importlib.import_module("08_generate_answer")
+    answer_query  = _answer_mod.answer_query
 
 # ── Config ────────────────────────────────────────────────────────
-ENABLE_LIVE_DEMO = os.getenv("ENABLE_LIVE_DEMO", "true").lower() == "true"
+ENABLE_LIVE_DEMO = os.getenv("ENABLE_LIVE_DEMO", "true").lower() == "true" and not SHOWCASE_MODE
 
 # ── Guard status (computed once at startup; no API calls, no torch import).
 # Env vars are read exactly the way ml_guard.py reads them at call time;
@@ -100,16 +109,23 @@ with st.sidebar:
         "'Attention Is All You Need' paper into one retrieval "
         "pipeline using the Gemini API."
     )
-    st.markdown("### Guard status")
-    st.markdown("Regex guard: **active**")
-    if _ML_GUARD_ACTIVE:
-        st.success(f"ML guard: ACTIVE ({_ML_MODEL_CHOICE})")
+    if SHOWCASE_MODE:
+        st.markdown("### Showcase mode")
+        st.info(
+            "This hosted copy shows the saved red-teaming results. The chat and "
+            "the live attack demo are off here because they need an API key."
+        )
     else:
-        st.error(f"ML guard: OFF ({_ML_GUARD_REASON})")
-    if ENABLE_LIVE_DEMO:
-        st.success("🛡️ Live attack demo: ON")
-    else:
-        st.info("🛡️ Live attack demo: OFF (set ENABLE_LIVE_DEMO=true to enable)")
+        st.markdown("### Guard status")
+        st.markdown("Regex guard: **active**")
+        if _ML_GUARD_ACTIVE:
+            st.success(f"ML guard: ACTIVE ({_ML_MODEL_CHOICE})")
+        else:
+            st.error(f"ML guard: OFF ({_ML_GUARD_REASON})")
+        if ENABLE_LIVE_DEMO:
+            st.success("🛡️ Live attack demo: ON")
+        else:
+            st.info("🛡️ Live attack demo: OFF (set ENABLE_LIVE_DEMO=true to enable)")
 
 
 # ── ML-guard warm-up (additive): load ONLY the model — the cached
@@ -297,7 +313,11 @@ def _category_counts(eval_data: dict) -> dict[str, dict[str, int]]:
 #  Tabs
 # ═══════════════════════════════════════════════════════════════════
 
-tab_chat, tab_redteam = st.tabs(["💬 Chat", "🛡️ Red Teaming"])
+# Showcase mode opens on the results, since the chat is switched off there.
+if SHOWCASE_MODE:
+    tab_redteam, tab_chat = st.tabs(["🛡️ Red Teaming", "💬 Chat"])
+else:
+    tab_chat, tab_redteam = st.tabs(["💬 Chat", "🛡️ Red Teaming"])
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -318,112 +338,118 @@ with tab_chat:
     ---
     """)
 
-    # ── Session state ────────────────────────────────────────────────
-    if "results" not in st.session_state:
-        st.session_state.results = None
-        st.session_state.answer  = None
-        st.session_state.query   = ""
-
-    # ── Input area ───────────────────────────────────────────────────
-    col1, col2 = st.columns([4, 1])
-    with col1:
-        query = st.text_input(
-            "Ask a question about the Transformer paper:",
-            placeholder="e.g. What BLEU score did the Transformer achieve on English-to-French translation?",
-            label_visibility="collapsed",
+    if SHOWCASE_MODE:
+        st.info(
+            "💬 The chat needs a Gemini API key and the vector store, so it is off in "
+            "this showcase. Open the 🛡️ Red Teaming tab to see the test results."
         )
-    with col2:
-        ask_clicked = st.button("Ask", type="primary", use_container_width=True)
+    else:
+        # ── Session state ────────────────────────────────────────────────
+        if "results" not in st.session_state:
+            st.session_state.results = None
+            st.session_state.answer  = None
+            st.session_state.query   = ""
 
-    st.markdown("**Try an example:**")
-    ex_cols = st.columns(4)
-    example_queries = [
-        (" Table", "What BLEU score did the Transformer achieve on English-to-French translation, and how does it compare to the training cost of previous models?"),
-        (" Architecture", "Describe the encoder-decoder architecture shown in the Transformer diagram."),
-        (" Attention", "What is multi-head attention and why is it used instead of single-head attention?"),
-        (" Training", "What regularization techniques does the Transformer use during training?"),
-    ]
+        # ── Input area ───────────────────────────────────────────────────
+        col1, col2 = st.columns([4, 1])
+        with col1:
+            query = st.text_input(
+                "Ask a question about the Transformer paper:",
+                placeholder="e.g. What BLEU score did the Transformer achieve on English-to-French translation?",
+                label_visibility="collapsed",
+            )
+        with col2:
+            ask_clicked = st.button("Ask", type="primary", use_container_width=True)
 
-    for col, (label, ex_q) in zip(ex_cols, example_queries):
-        with col:
-            if st.button(label, use_container_width=True):
-                query = ex_q
-                ask_clicked = True
+        st.markdown("**Try an example:**")
+        ex_cols = st.columns(4)
+        example_queries = [
+            (" Table", "What BLEU score did the Transformer achieve on English-to-French translation, and how does it compare to the training cost of previous models?"),
+            (" Architecture", "Describe the encoder-decoder architecture shown in the Transformer diagram."),
+            (" Attention", "What is multi-head attention and why is it used instead of single-head attention?"),
+            (" Training", "What regularization techniques does the Transformer use during training?"),
+        ]
 
-    # ── Run pipeline ─────────────────────────────────────────────────
-    if ask_clicked and query.strip():
-        with st.spinner("🔍 Retrieving relevant chunks and generating answer..."):
-            try:
-                ans = answer_query(query.strip(), top_k=3)
-                st.session_state.results = ans["full_sources"]
-                st.session_state.answer  = ans["answer"]
-                st.session_state.query   = query.strip()
-            except RuntimeError as e:
-                st.session_state.answer = None
-                st.error(f"Quota error: {e}")
-            except Exception as e:
-                st.session_state.answer = None
-                if _is_network_error(e):
-                    st.warning("Network hiccup talking to the API, please click again")
+        for col, (label, ex_q) in zip(ex_cols, example_queries):
+            with col:
+                if st.button(label, use_container_width=True):
+                    query = ex_q
+                    ask_clicked = True
+
+        # ── Run pipeline ─────────────────────────────────────────────────
+        if ask_clicked and query.strip():
+            with st.spinner("🔍 Retrieving relevant chunks and generating answer..."):
+                try:
+                    ans = answer_query(query.strip(), top_k=3)
+                    st.session_state.results = ans["full_sources"]
+                    st.session_state.answer  = ans["answer"]
+                    st.session_state.query   = query.strip()
+                except RuntimeError as e:
+                    st.session_state.answer = None
+                    st.error(f"Quota error: {e}")
+                except Exception as e:
+                    st.session_state.answer = None
+                    if _is_network_error(e):
+                        st.warning("Network hiccup talking to the API, please click again")
+                    else:
+                        st.error(f"An unexpected error occurred:\n\n{e}")
+
+        # ── Source card helper ───────────────────────────────────────────
+        def _draw_source_card(r: dict):
+            etype = r["type"]
+            sim   = r.get("similarity", 0)
+            title = r.get("title", "")
+            page  = r.get("page", "")
+            content = r.get("display_content", "")
+
+            with st.container(border=True):
+                badge_cols = st.columns([1, 1])
+                badge_cols[0].markdown(f"**{etype.upper()}**  ȯ page {page}")
+                badge_cols[1].markdown(f"<div style='text-align:right'>sim={sim:.3f}</div>",
+                                       unsafe_allow_html=True)
+
+                if etype == "figure":
+                    st.markdown(f"*{title}*")
+                    img_path = r.get("image_path")
+                    if img_path and Path(img_path).is_file():
+                        st.image(str(img_path), use_container_width=True)
+                    else:
+                        st.caption("(image file not found)")
+                elif etype == "table":
+                    st.markdown(f"*{title}*")
+                    if content:
+                        st.text(content[:600])
+                    else:
+                        st.caption("(empty table)")
                 else:
-                    st.error(f"An unexpected error occurred:\n\n{e}")
+                    st.markdown(f"*{title}*")
+                    if content:
+                        st.markdown(content[:500])
+                    else:
+                        st.caption("(empty chunk)")
 
-    # ── Source card helper ───────────────────────────────────────────
-    def _draw_source_card(r: dict):
-        etype = r["type"]
-        sim   = r.get("similarity", 0)
-        title = r.get("title", "")
-        page  = r.get("page", "")
-        content = r.get("display_content", "")
+        # ── Display results ──────────────────────────────────────────────
+        if st.session_state.answer:
+            st.markdown("---")
+            st.markdown("### ✨ Answer")
+            st.info(st.session_state.answer)
+            st.markdown("")
 
-        with st.container(border=True):
-            badge_cols = st.columns([1, 1])
-            badge_cols[0].markdown(f"**{etype.upper()}**  ȯ page {page}")
-            badge_cols[1].markdown(f"<div style='text-align:right'>sim={sim:.3f}</div>",
-                                   unsafe_allow_html=True)
+            with st.expander("📚 Sources used", expanded=True):
+                src_results = st.session_state.results
+                if src_results:
+                    for i in range(0, len(src_results), 2):
+                        cols = st.columns(2)
+                        for j, col in enumerate(cols):
+                            idx = i + j
+                            if idx >= len(src_results):
+                                break
+                            r = src_results[idx]
+                            with col:
+                                _draw_source_card(r)
 
-            if etype == "figure":
-                st.markdown(f"*{title}*")
-                img_path = r.get("image_path")
-                if img_path and Path(img_path).is_file():
-                    st.image(str(img_path), use_container_width=True)
-                else:
-                    st.caption("(image file not found)")
-            elif etype == "table":
-                st.markdown(f"*{title}*")
-                if content:
-                    st.text(content[:600])
-                else:
-                    st.caption("(empty table)")
-            else:
-                st.markdown(f"*{title}*")
-                if content:
-                    st.markdown(content[:500])
-                else:
-                    st.caption("(empty chunk)")
-
-    # ── Display results ──────────────────────────────────────────────
-    if st.session_state.answer:
-        st.markdown("---")
-        st.markdown("### ✨ Answer")
-        st.info(st.session_state.answer)
-        st.markdown("")
-
-        with st.expander("📚 Sources used", expanded=True):
-            src_results = st.session_state.results
-            if src_results:
-                for i in range(0, len(src_results), 2):
-                    cols = st.columns(2)
-                    for j, col in enumerate(cols):
-                        idx = i + j
-                        if idx >= len(src_results):
-                            break
-                        r = src_results[idx]
-                        with col:
-                            _draw_source_card(r)
-
-        st.markdown("")
-        st.caption(f"Query: _{st.session_state.query}_")
+            st.markdown("")
+            st.caption(f"Query: _{st.session_state.query}_")
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -736,6 +762,14 @@ with tab_redteam:
                                 st.error(f"Error running attack: {e}")
             else:
                 st.caption("Select a prompt above, then click **Run Attack**.")
+        elif SHOWCASE_MODE:
+            st.markdown("---")
+            st.markdown("### 🎯 Live Attack Demo")
+            st.info(
+                "The live attack demo sends prompts to the real chatbot, so it needs an "
+                "API key and is off in this showcase. The results above come from the "
+                "saved test runs in `red_team_toolkit/results/`."
+            )
         else:
             st.info(
                 "💡 Live attack demo is disabled. Set `ENABLE_LIVE_DEMO=true` "
